@@ -38,6 +38,7 @@ from praxis.layers import normalizations
 from praxis.layers import transformers
 import patched_decoder
 from utilsforecast.processing import make_future_dataframe
+import optax
 
 instantiate = base_hyperparams.instantiate
 NestedMap = py_utils.NestedMap
@@ -693,18 +694,18 @@ class TimesFm:
                 max_len=self.context_len,
                 method=self._model.decode,
             )
-            print(predictions[0].shape, predictions[1].shape, targets.shape)
             return jnp.mean(jnp.abs(predictions[0] - targets))
 
         # Initialize the optimizer
-        opt_init, opt_update, get_params = optimizers.adam(learning_rate)
-        opt_state = opt_init(self._train_state.mdl_vars)
+        params = self._train_state.mdl_vars
+        optimizer = optax.sgd(learning_rate)
+        opt_state = optimizer.init(params)
 
         @jax.jit
         def step(params, opt_state, inputs, targets):
             loss, grads = jax.value_and_grad(loss_fn)(params, inputs, targets)
-            updates, opt_state = opt_update(grads, opt_state)
-            params = optimizers.apply_updates(params, updates)
+            updates, opt_state = optimizer.update(grads, opt_state)
+            params = optax.apply_updates(params, updates)
             return loss, params, opt_state
 
         # Training loop
@@ -720,21 +721,16 @@ class TimesFm:
                     ],
                     "freq": train_dataset["freq"][batch_start:batch_end],
                 }
-                print("hl", self.horizon_len)
-                print(train_dataset["input_ts"].shape)
                 targets = train_dataset["input_ts"][
-                    batch_end : batch_end + self.horizon_len
+                    batch_start:batch_end, : self.horizon_len
                 ]
-
-                loss, self._train_state.mdl_vars, opt_state = step(
-                    self._train_state.mdl_vars, opt_state, batch_inputs, targets
-                )
+                loss, params, opt_state = step(params, opt_state, batch_inputs, targets)
                 print(
                     f"Epoch {epoch + 1}, Batch {batch_start // batch_size + 1}, Loss: {loss}"
                 )
 
         # Save the fine-tuned model
         checkpoints.save_checkpoint(
-            checkpoint_dir, self._train_state, step=num_epochs, keep=3
+            train_state=self._train_state, checkpoint_dir=checkpoint_dir, overwrite=True
         )
         print("Fine-tuning completed and checkpoint saved.")
