@@ -39,6 +39,9 @@ from praxis.layers import transformers
 import patched_decoder
 from utilsforecast.processing import make_future_dataframe
 import optax
+import orbax
+import orbax.checkpoint
+from flax.training import train_state
 
 instantiate = base_hyperparams.instantiate
 NestedMap = py_utils.NestedMap
@@ -275,6 +278,7 @@ class TimesFm:
             state_specs=train_state_partition_specs,
             step=step,
         )
+        print(self._train_state)
         self._logging(f"Restored checkpoint in {time.time() - start_time:.2f} seconds.")
 
         # Initialize and jit the decode fn.
@@ -709,6 +713,7 @@ class TimesFm:
             return loss, params, opt_state
 
         # Training loop
+        state = self._train_state
         for epoch in range(num_epochs):
             for batch_start in range(0, len(train_dataset["input_ts"]), batch_size):
                 batch_end = min(
@@ -725,12 +730,13 @@ class TimesFm:
                     batch_start:batch_end, : self.horizon_len
                 ]
                 loss, params, opt_state = step(params, opt_state, batch_inputs, targets)
+                state = state.new_state(mdl_vars=params, opt_states=[opt_state])
                 print(
                     f"Epoch {epoch + 1}, Batch {batch_start // batch_size + 1}, Loss: {loss}"
                 )
 
         # Save the fine-tuned model
         checkpoints.save_checkpoint(
-            train_state=self._train_state, checkpoint_dir=checkpoint_dir, overwrite=True
+            train_state=state, checkpoint_dir=checkpoint_dir, overwrite=True
         )
         print("Fine-tuning completed and checkpoint saved.")
