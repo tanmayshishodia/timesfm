@@ -22,7 +22,6 @@ from typing import Any, Literal, Optional, Sequence
 
 import einshape as es
 import jax
-from jax.example_libraries import optimizers
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -39,9 +38,6 @@ from praxis.layers import transformers
 import patched_decoder
 from utilsforecast.processing import make_future_dataframe
 import optax
-import orbax
-import orbax.checkpoint
-from flax.training import train_state
 
 instantiate = base_hyperparams.instantiate
 NestedMap = py_utils.NestedMap
